@@ -35,7 +35,7 @@ def generate_zombie_story():
     }
     Include exactly 5 scenes. Every image_prompt must be first-person POV survival horror with no text in the image.
     """
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
     clean_json = re.sub(r"```json|```", "", response.text).strip()
     return json.loads(clean_json)
 
