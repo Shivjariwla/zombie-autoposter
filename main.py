@@ -40,10 +40,29 @@ def generate_zombie_story():
     return json.loads(clean_json)
 
 def generate_ai_image(prompt, filename):
-    encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1920&nologo=true&model=flux"
+    hf_token = os.getenv("HF_TOKEN")
+    # 1. Primary: Hugging Face Free Inference API (FLUX.1-schnell)
+    if hf_token:
+        hf_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+        headers = {"Authorization": f"Bearer {hf_token}"}
+        for _ in range(3):
+            res = requests.post(
+                hf_url,
+                headers=headers,
+                json={"inputs": prompt, "parameters": {"width": 768, "height": 1344}},
+                timeout=90
+            )
+            if res.status_code == 200 and len(res.content) > 10000:
+                with open(filename, "wb") as f:
+                    f.write(res.content)
+                return
+            time.sleep(5)
+
+    # 2. Fallback: Pollinations standard endpoint
+    encoded = urllib.parse.quote(prompt[:350])
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=1344&nologo=true"
     for _ in range(3):
-        res = requests.get(url, timeout=90)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=90)
         if res.status_code == 200 and len(res.content) > 10000:
             with open(filename, "wb") as f:
                 f.write(res.content)
