@@ -26,65 +26,133 @@ VOICE = "en-US-AndrewNeural"
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CLOUDINARY_URL = os.environ["CLOUDINARY_URL"]
 BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
+STATE_FILE = "story_state.json"
 
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 
+def load_story_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("pending_part_2"):
+                    return data
+        except Exception as e:
+            print(f"Could not read {STATE_FILE}: {e}")
+    return None
+
+
+def save_story_state(state_data):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state_data, f, indent=2)
+
+
 def generate_zombie_story():
-    scenarios = [
-        "locked inside a 24-hour supermarket after midnight",
-        "trapped inside an IKEA warehouse after closing time",
-        "stuck on the 48th floor of a luxury apartment building with dead power",
-        "locked inside an underground subway station control booth",
-        "barricaded inside a 24-hour highway gas station during a blackout",
-        "trapped inside an overnight sleeper train stopped in the middle of nowhere",
-        "locked inside a school building after late-night sports practice",
-        "stuck inside a multi-story underground parking garage",
-        "trapped inside a small-town hardware store",
-        "locked inside an airport terminal after all flights are grounded",
-        "stuck on a ferry boat drifting without engine power",
-        "barricaded inside a movie theater projection room"
-    ]
-
-    chosen_scenario = random.choice(scenarios)
-
+    saved_state = load_story_state()
     client = genai.Client(api_key=GEMINI_API_KEY)
-    prompt = f"""
-    Write a viral 40-second first-person ("you") zombie survival story (Part 1) about being {chosen_scenario}.
-    Model the exact writing style after viral survival channels like "Nobody Gets In":
 
-    CRITICAL WRITING RULES:
-    1. SIMPLE ENGLISH ONLY: Use everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max per sentence).
-    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—never screaming or dramatic.
-    3. USE REAL NUMBERS & OBJECTS: Mention exact times (e.g., "It is 2:14 in the morning"), exact counts (e.g., "40,000 items", "90 minutes of battery"), and clever real-world objects.
-    4. INSTANT HOOK: Scene 1 must open with a shocking, simple rule or fact that stops scrolling.
-    5. STRUCTURE (EXACTLY 6 SCENES, 15-22 WORDS EACH):
-       - Scenes 1 to 5: Explain the setup, the rules of the building, and your clever survival plan.
-       - Scene 6 (THE CLIFFHANGER): MUST end abruptly at the exact second a new, impossible threat happens (e.g., the backup generator dies, a human survivor knocks with a warning, the steel shutter bends open, or your walkie-talkie crackles with terrible news). DO NOT resolve the story—cut off right at peak suspense so viewers beg for Part 2 in the comments!
+    if saved_state:
+        # AUTOMATICALLY GENERATE PART 2 FROM SAVED PART 1
+        scenario = saved_state["scenario"]
+        part1_summary = saved_state["part1_script"]
+        last_line = saved_state["last_line"]
+        mode = "PART_2"
 
-    VISUAL PROMPT RULES (VERY IMPORTANT):
-    - Every image_prompt MUST be vertical 9:16 cinematic dark horror photography.
-    - NEVER include human hands, arms, or fingers in the foreground. Focus on moody hallways, barricaded doors, shadows through glass, emergency red lights, flashlights on the floor, and silhouettes.
+        prompt = f"""
+        Write PART 2 (the dramatic conclusion) of this viral first-person ("you") zombie survival story set in {scenario}.
+        
+        HERE IS WHAT HAPPENED IN PART 1:
+        {part1_summary}
+        
+        PART 1 ENDED ON THIS EXACT CLIFFHANGER LINE:
+        "{last_line}"
 
-    Return ONLY valid JSON:
-    {{
-      "caption": "Part 1 | POV: You're {chosen_scenario} during an outbreak. Comment if you want Part 2 👇 #zombieapocalypse #survival #pov #storytime #shorts",
-      "scenes": [
+        CRITICAL WRITING RULES FOR PART 2:
+        1. PICK UP IMMEDIATELY: Sentence 1 of Scene 1 must continue the exact second after "{last_line}".
+        2. SIMPLE ENGLISH ONLY: Everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max).
+        3. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—like "Nobody Gets In".
+        4. USE REAL NUMBERS & OBJECTS: Clever real-world survival math and everyday items used as traps or tools.
+        5. STRUCTURE (EXACTLY 6 SCENES, 15-22 WORDS EACH):
+           - Scenes 1 to 4: How you narrowly survive the cliffhanger from Part 1 using clever thinking.
+           - Scenes 5 to 6: A chilling final twist or Day-30 survival inventory, ending on a strong closing thought.
+
+        VISUAL PROMPT RULES:
+        - Every image_prompt MUST be vertical 9:16 cinematic dark horror photography.
+        - NEVER include human hands, arms, or fingers in the foreground. Focus on moody hallways, barricaded doors, shadows through glass, emergency red lights, flashlights on the floor, and silhouettes.
+
+        Return ONLY valid JSON:
         {{
-          "narration": "Automatic doors open for anything that walks up to them. They do not check for a pulse.",
-          "image_prompt": "Vertical 9:16 dark cinematic movie still inside an empty modern supermarket at 2 AM, sliding glass entrance doors partially open, eerie silhouette standing motionless in the foggy dark parking lot outside, cold blue fluorescent lighting, 35mm film grain, photorealistic, no text"
+          "caption": "Part 2 (Final) | POV: You're {scenario} during an outbreak. Did you survive? #zombieapocalypse #survival #pov #part2 #shorts",
+          "scenes": [
+            {{
+              "narration": "Scene 1 continuation line...",
+              "image_prompt": "Vertical 9:16 dark cinematic movie still..."
+            }}
+          ]
         }}
-      ]
-    }}
-    Make sure there are exactly 6 scenes and ZERO text in any image.
-    """
+        Make sure there are exactly 6 scenes and ZERO text in any image.
+        """
+    else:
+        # GENERATE PART 1 WITH A TRUE MID-ACTION CLIFFHANGER
+        scenarios = [
+            "locked inside a 24-hour supermarket after midnight",
+            "trapped inside an IKEA warehouse after closing time",
+            "stuck on the 48th floor of a luxury apartment building with dead power",
+            "locked inside an underground subway station control booth",
+            "barricaded inside a 24-hour highway gas station during a blackout",
+            "trapped inside an overnight sleeper train stopped in the middle of nowhere",
+            "locked inside a school building after late-night sports practice",
+            "stuck inside a multi-story underground parking garage",
+            "trapped inside a small-town hardware store",
+            "locked inside an airport terminal after all flights are grounded",
+            "stuck on a ferry boat drifting without engine power",
+            "barricaded inside a movie theater projection room"
+        ]
+        scenario = random.choice(scenarios)
+        mode = "PART_1"
+
+        prompt = f"""
+        Write PART 1 of a viral 40-second first-person ("you") zombie survival story about being {scenario}.
+        Model the exact writing style after "Nobody Gets In":
+
+        CRITICAL WRITING RULES:
+        1. SIMPLE ENGLISH ONLY: Everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max).
+        2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—never screaming.
+        3. USE REAL NUMBERS & OBJECTS: Exact times ("2:14 in the morning"), exact counts ("9,000 cans", "90 minutes"), and clever objects.
+        4. INSTANT HOOK: Scene 1 must open with a shocking, simple rule or fact that stops scrolling.
+        5. STRUCTURE (EXACTLY 6 SCENES, 15-22 WORDS EACH):
+           - Scenes 1 to 4: Establish the building rules, supplies, and first barricade.
+           - Scene 5: Something goes terribly wrong (power surges back on, a lock snaps, or living raiders pull up outside).
+           - Scene 6 (HARD MID-ACTION CLIFFHANGER): MUST cut off right in the middle of an immediate life-or-death emergency—DO NOT finish the action or resolve it! The final sentence of Scene 6 MUST end with a sudden disaster followed by: "Comment Part 2 if you want to see how you survive."
+
+        VISUAL PROMPT RULES:
+        - Every image_prompt MUST be vertical 9:16 cinematic dark horror photography.
+        - NEVER include human hands, arms, or fingers in the foreground.
+
+        Return ONLY valid JSON:
+        {{
+          "caption": "Part 1 | POV: You're {scenario} during an outbreak. Comment Part 2 👇 #zombieapocalypse #survival #pov #storytime #shorts",
+          "scenes": [
+            {{
+              "narration": "Automatic doors open for anything that walks up to them. They do not check for a pulse.",
+              "image_prompt": "Vertical 9:16 dark cinematic movie still inside an empty modern supermarket at 2 AM, sliding glass entrance doors partially open, eerie silhouette standing motionless in the foggy dark parking lot outside, cold blue fluorescent lighting, 35mm film grain, photorealistic, no text"
+            }}
+          ]
+        }}
+        Make sure there are exactly 6 scenes and ZERO text in any image.
+        """
+
     models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
     for attempt in range(4):
         model_name = models_to_try[attempt % len(models_to_try)]
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
             clean_json = re.sub(r"```json|```", "", response.text).strip()
-            return json.loads(clean_json)
+            story = json.loads(clean_json)
+            story["_mode"] = mode
+            story["_scenario"] = scenario
+            return story
         except Exception as e:
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
             time.sleep(10)
@@ -134,7 +202,6 @@ def create_horror_ambience(duration, fps=44100):
 
 
 def split_into_subtitle_chunks(text, total_duration):
-    """Groups narration into natural 4-5 word reading phrases for smooth subtitles."""
     words = text.strip().split()
     if not words:
         return []
@@ -180,7 +247,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         bg = CompositeVideoClip([animated_img.with_position(("center", "center"))], size=(1080, 1920))
         layers = [bg]
 
-        # Smooth, clean editorial subtitles (crisp white, subtle outline, soft fade)
         subtitle_chunks = split_into_subtitle_chunks(scene["narration"], dur)
         for phrase, start_t, sub_dur in subtitle_chunks:
             fade_dur = min(0.12, sub_dur * 0.25)
@@ -299,7 +365,7 @@ def publish_to_all_platforms(public_video_url, caption):
                 }
             }
         elif service == "youtube":
-            yt_title = caption.split("#")[0].strip()[:90] or "Part 1 | POV: Zombie Outbreak Survival"
+            yt_title = caption.split("#")[0].strip()[:90] or "POV: Zombie Outbreak Survival"
             if "#shorts" not in yt_title.lower():
                 yt_title = f"{yt_title} #shorts"[:100]
             post_input["metadata"] = {
@@ -324,6 +390,22 @@ if __name__ == "__main__":
     upload = cloudinary.uploader.upload(video_file, resource_type="video")
     try:
         publish_to_all_platforms(upload["secure_url"], story["caption"])
+
+        # Save or clear Part 1 -> Part 2 memory for the next scheduled run
+        if story["_mode"] == "PART_1":
+            full_script = " ".join(s["narration"] for s in story["scenes"])
+            last_scene_text = story["scenes"][-1]["narration"]
+            save_story_state({
+                "pending_part_2": True,
+                "scenario": story["_scenario"],
+                "part1_script": full_script,
+                "last_line": last_scene_text
+            })
+            print("Saved Part 1 cliffhanger to story_state.json for automatic Part 2 next run.")
+        else:
+            save_story_state({"pending_part_2": False})
+            print("Part 2 completed and cleared story_state.json.")
+
         time.sleep(60)
     finally:
         cloudinary.uploader.destroy(upload["public_id"], resource_type="video")
