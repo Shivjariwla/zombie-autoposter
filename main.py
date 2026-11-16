@@ -9,6 +9,7 @@ import requests
 import edge_tts
 import cloudinary
 import cloudinary.uploader
+import random
 from google import genai
 from moviepy import ImageClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
 
@@ -20,21 +21,65 @@ BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 def generate_zombie_story():
+    locations = [
+        "an empty IKEA warehouse after closing time",
+        "a stalled ski-lift gondola dangling above a dark pine forest",
+        "the basement laundry room of an old apartment building",
+        "a flooded underground subway tunnel",
+        "a bumper-to-bumper highway tunnel during a blackout",
+        "the projection booth of an abandoned 1980s movie theater",
+        "a remote 24-hour laundromat at 3:00 AM",
+        "a walk-in freezer inside a deserted restaurant kitchen",
+        "the top floor of a glass office skyscraper with dead elevators",
+        "a foggy ferry boat drifting without power",
+        "an overnight cross-country sleeper train stopped in the woods",
+        "a dark school gymnasium with bleachers and locker rooms",
+        "a crowded airport baggage claim terminal during lockdown",
+        "a storm drain beneath a suburban street",
+        "an isolated fire lookout tower in the mountains",
+        "a pitch-black aquarium tunnel surrounded by glass tanks",
+        "a multi-story underground parking garage",
+        "a rural gas station convenience store during a thunderstorm"
+    ]
+
+    twists = [
+        "your phone flashlight is at 3% battery and flickering",
+        "a loud emergency broadcast alert suddenly blares from a nearby radio",
+        "you dropped your keys behind a metal grate just feet from a horde",
+        "one of the doors you thought was locked slowly creaks open on its own",
+        "the zombies in this area hunt purely by sound, and broken glass covers the floor",
+        "you only have one flare left and hear heavy footsteps sprinting down the hall",
+        "the emergency backup generator is running out of fuel and the red lights are dying",
+        "someone is banging on the outside door begging for help, but their shadow looks wrong",
+        "a security camera monitor shows them already inside the building with you",
+        "your walkie-talkie crackles with a warning that the building is about to be firebombed"
+    ]
+
+    chosen_location = random.choice(locations)
+    chosen_twist = random.choice(twists)
+
     client = genai.Client(api_key=GEMINI_API_KEY)
-    prompt = """
-    Write a tense 30-second first-person POV zombie apocalypse survival story in a unique location (e.g. subway station, hospital corridor, gas station, apartment roof).
-    Break it into 5 dramatic scenes (1-2 short punchy sentences each).
+    prompt = f"""
+    Write a terrifying, heart-pounding 30-second first-person POV zombie apocalypse horror story.
+    Setting: Trapped inside {chosen_location}.
+    Suspense Twist: {chosen_twist}.
+
+    Style rules:
+    - Make it genuinely scary, claustrophobic, and suspenseful (short breathless sentences, sensory details like footsteps, breathing, scratching at doors, flickering shadows).
+    - End on a chilling cliffhanger or split-second survival choice.
+    - Break it into exactly 5 dramatic scenes (1-2 short punchy sentences per scene).
+
     Return ONLY valid JSON:
-    {
-      "caption": "POV: You're trapped during a zombie outbreak. Would you survive? #zombieapocalypse #pov #survival #horror #shorts",
+    {{
+      "caption": "POV: You're trapped in {chosen_location} during an outbreak... Would you survive? #zombieapocalypse #pov #scarystories #horror #survival #shorts",
       "scenes": [
-        {
+        {{
           "narration": "Spoken line for scene 1...",
-          "image_prompt": "First-person POV shot looking through cracked glass doors at night, zombies silhouette outside in fog, flashlight beam, dark survival horror, photorealistic 8k"
-        }
+          "image_prompt": "First-person POV horror shot inside {chosen_location}, pitch black shadows, dim flickering emergency light, terrifying silhouettes of infected figures approaching, hyperrealistic cinematic horror, 8k, no text"
+        }}
       ]
-    }
-    Include exactly 5 scenes. Every image_prompt must be first-person POV survival horror with no text in the image.
+    }}
+    Every image_prompt MUST be first-person POV survival horror matching that exact scene's action, dark atmospheric lighting, photorealistic, with zero text in the image.
     """
     models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
     for attempt in range(4):
@@ -47,7 +92,7 @@ def generate_zombie_story():
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
             time.sleep(10)
     raise RuntimeError("All Gemini story generation attempts failed.")
-
+    
 def generate_ai_image(prompt, filename):
     cf_account = os.environ["CF_ACCOUNT_ID"].strip()
     cf_token = os.environ["CF_API_TOKEN"].strip()
