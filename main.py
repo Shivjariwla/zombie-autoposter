@@ -94,11 +94,8 @@ def generate_ai_image(prompt, filename):
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     headers = {"Authorization": f"Bearer {cf_token}"}
 
-    # Full 9:16 vertical resolution (768x1344) eliminates black bars completely
     payload = {
         "prompt": prompt,
-        "width": 768,
-        "height": 1344,
         "steps": 4
     }
 
@@ -124,9 +121,7 @@ async def generate_scene_audio(text, audio_path):
 def create_horror_ambience(duration, fps=44100):
     """Synthesizes a subtle dark bass drone + slow tense heartbeat pulse."""
     t = np.linspace(0, duration, int(fps * duration), endpoint=False)
-    # Deep sub-bass horror drone (55 Hz + eerie detuned 58 Hz)
     drone = 0.5 * np.sin(2 * np.pi * 55 * t) + 0.35 * np.sin(2 * np.pi * 58.2 * t)
-    # Slow tense heartbeat pulse every ~1.2 seconds
     beat_phase = t % 1.2
     lub = np.exp(-35 * beat_phase) * np.sin(2 * np.pi * 48 * t)
     dub = np.exp(-35 * np.maximum(0, beat_phase - 0.22)) * (beat_phase >= 0.22) * np.sin(2 * np.pi * 42 * t)
@@ -139,7 +134,6 @@ def split_into_subtitle_chunks(text, total_duration):
     words = text.strip().split()
     if not words:
         return []
-    # 2 to 3 words per pop-up chunk so viewers read at a glance
     chunk_size = 3
     chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
     total_chars = sum(len(c) for c in chunks)
@@ -168,8 +162,13 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         audio = AudioFileClip(aud_file)
         dur = audio.duration
 
-        # Scale cleanly to full 1080x1920 vertical frame + alternate zoom-in / zoom-out
-        raw_clip = ImageClip(img_file).resized((1080, 1920)).with_duration(dur)
+        # Center-crop square Flux output cleanly to fill full 1080x1920 vertical frame
+        raw_clip = (
+            ImageClip(img_file)
+            .resized(height=1920)
+            .cropped(x_center=960, width=1080)
+            .with_duration(dur)
+        )
         if idx % 2 == 0:
             animated_img = raw_clip.resized(lambda t, d=dur: 1.0 + 0.08 * (t / d))
         else:
@@ -178,7 +177,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         bg = CompositeVideoClip([animated_img.with_position(("center", "center"))], size=(1080, 1920))
         layers = [bg]
 
-        # Crisp center-screen captions with vertical padding so letters never clip
         subtitle_chunks = split_into_subtitle_chunks(scene["narration"], dur)
         for phrase, start_t, sub_dur in subtitle_chunks:
             txt = (
@@ -202,7 +200,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         scene_clips.append(scene_comp)
 
     video = concatenate_videoclips(scene_clips, method="compose")
-    # Layer dark ambient drone + heartbeat underneath the narration
     ambience = create_horror_ambience(video.duration)
     final_audio = CompositeAudioClip([video.audio, ambience])
     final_video = video.with_audio(final_audio)
