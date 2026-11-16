@@ -1,6 +1,3 @@
 {
-  "pending_part_2": true,
-  "scenario": "trapped inside an IKEA warehouse after closing time",
-  "part1_script": "Never follow the yellow floor arrows in an IKEA. They form a deliberate maze with no direct exits. At 9:14 PM, the steel shutters drop. You have forty-two thousand square feet and two hundred flatpack bed frames. An electric drill beats a four-millimeter Allen key. You bolt eight heavy pine wardrobes across the cafeteria staircase in twelve minutes. The high-bay racking in Aisle 14 is twenty-eight feet tall. You stack twelve hundred wooden pallets to make a ladder. At 11:03 PM, the automated store intercom resets. Swedish pop music blasts through eighty ceiling speakers at maximum volume. The glass showroom doors shatter inward. Hundreds rush the stairs. Comment Part 2 if you want to see how you survive.",
-  "last_line": "The glass showroom doors shatter inward. Hundreds rush the stairs. Comment Part 2 if you want to see how you survive."
+  "pending_part_2": false
 }
