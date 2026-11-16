@@ -212,26 +212,45 @@ def publish_to_all_platforms(public_video_url, caption):
       }
     }
     """
-    for ch in active_channels:
-        variables = {
-            "input": {
-                "text": caption,
-                "channelId": ch["id"],
-                "schedulingType": "automatic",
-                "mode": "shareNow",
-                "assets": [
-                    {
-                        "video": {
-                            "url": public_video_url
-                        }
+for ch in active_channels:
+        service = ch["service"].lower()
+        post_input = {
+            "text": caption,
+            "channelId": ch["id"],
+            "schedulingType": "automatic",
+            "mode": "shareNow",
+            "assets": [
+                {
+                    "video": {
+                        "url": public_video_url
                     }
-                ]
-            }
+                }
+            ]
         }
+
+        if service == "instagram":
+            post_input["metadata"] = {
+                "instagram": {
+                    "type": "reel",
+                    "shouldShareToFeed": True
+                }
+            }
+        elif service == "youtube":
+            # Use first sentence of caption (max 100 chars) as YouTube Shorts title
+            yt_title = caption.split("#")[0].strip()[:90] or "POV: Zombie Outbreak Survival"
+            if "#shorts" not in yt_title.lower():
+                yt_title = f"{yt_title} #shorts"[:100]
+            post_input["metadata"] = {
+                "youtube": {
+                    "title": yt_title,
+                    "categoryId": "24"  # 24 = Entertainment
+                }
+            }
+
         post_res = requests.post(
             url,
             headers=headers,
-            json={"query": create_post_mutation, "variables": variables}
+            json={"query": create_post_mutation, "variables": {"input": post_input}}
         ).json()
         print(f"Published to {ch['service']} ({ch['name']}):", post_res)
 
