@@ -144,7 +144,7 @@ def generate_zombie_story():
         """
 
     models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
-    for attempt in range(4):
+    for attempt in range(8):
         model_name = models_to_try[attempt % len(models_to_try)]
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
@@ -155,7 +155,7 @@ def generate_zombie_story():
             return story
         except Exception as e:
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
-            time.sleep(10)
+            time.sleep(15)
     raise RuntimeError("All Gemini story generation attempts failed.")
 
 
@@ -406,6 +406,6 @@ if __name__ == "__main__":
             save_story_state({"pending_part_2": False})
             print("Part 2 completed and cleared story_state.json.")
 
-        time.sleep(60)
+        time.sleep(180)
     finally:
         cloudinary.uploader.destroy(upload["public_id"], resource_type="video")
