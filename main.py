@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import math
 import os
 import random
 import re
@@ -12,7 +13,7 @@ import cloudinary.uploader
 from google import genai
 from moviepy import ImageClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
 
-VOICE = "en-US-ChristopherNeural"
+VOICE = "en-US-AndrewNeural"  # Calm, natural, engaging storyteller voice
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CLOUDINARY_URL = os.environ["CLOUDINARY_URL"]
 BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
@@ -21,65 +22,46 @@ cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 
 def generate_zombie_story():
-    locations = [
-        "an empty IKEA warehouse after closing time",
-        "a stalled ski-lift gondola dangling above a dark pine forest",
-        "the basement laundry room of an old apartment building",
-        "a flooded underground subway tunnel",
-        "a bumper-to-bumper highway tunnel during a blackout",
-        "the projection booth of an abandoned 1980s movie theater",
-        "a remote 24-hour laundromat at 3:00 AM",
-        "a walk-in freezer inside a deserted restaurant kitchen",
-        "the top floor of a glass office skyscraper with dead elevators",
-        "a foggy ferry boat drifting without power",
-        "an overnight cross-country sleeper train stopped in the woods",
-        "a dark school gymnasium with bleachers and locker rooms",
-        "a crowded airport baggage claim terminal during lockdown",
-        "a storm drain beneath a suburban street",
-        "an isolated fire lookout tower in the mountains",
-        "a pitch-black aquarium tunnel surrounded by glass tanks",
-        "a multi-story underground parking garage",
-        "a rural gas station convenience store during a thunderstorm"
+    scenarios = [
+        "locked inside a 24-hour supermarket after midnight",
+        "trapped inside an IKEA warehouse after closing time",
+        "stuck on the top floor of a luxury apartment building with dead power",
+        "locked inside an underground subway station control booth",
+        "barricaded inside a 24-hour highway gas station during a blackout",
+        "trapped inside an overnight sleeper train stopped in the middle of nowhere",
+        "locked inside a school building after late-night sports practice",
+        "stuck inside a multi-story underground parking garage",
+        "trapped inside a small-town hardware store",
+        "locked inside an airport terminal after all flights are grounded",
+        "stuck on a ferry boat drifting without engine power",
+        "barricaded inside a movie theater projection room"
     ]
 
-    twists = [
-        "your phone flashlight is at 3% battery and flickering",
-        "a loud emergency broadcast alert suddenly blares from a nearby radio",
-        "you dropped your keys behind a metal grate just feet from a horde",
-        "one of the doors you thought was locked slowly creaks open on its own",
-        "the zombies in this area hunt purely by sound, and broken glass covers the floor",
-        "you only have one flare left and hear heavy footsteps sprinting down the hall",
-        "the emergency backup generator is running out of fuel and the red lights are dying",
-        "someone is banging on the outside door begging for help, but their shadow looks wrong",
-        "a security camera monitor shows them already inside the building with you",
-        "your walkie-talkie crackles with a warning that the building is about to be firebombed"
-    ]
-
-    chosen_location = random.choice(locations)
-    chosen_twist = random.choice(twists)
+    chosen_scenario = random.choice(scenarios)
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""
-    Write a terrifying, heart-pounding 30-second first-person POV zombie apocalypse horror story.
-    Setting: Trapped inside {chosen_location}.
-    Suspense Twist: {chosen_twist}.
+    Write a viral 40-second first-person ("you") zombie survival story about being {chosen_scenario}.
+    Model the exact writing style after viral survival channels like "Nobody Gets In":
 
-    Style rules:
-    - Make it genuinely scary, claustrophobic, and suspenseful (short breathless sentences, sensory details like footsteps, breathing, scratching at doors, flickering shadows).
-    - End on a chilling cliffhanger or split-second survival choice.
-    - Break it into exactly 5 dramatic scenes (1-2 short punchy sentences per scene).
+    CRITICAL WRITING RULES:
+    1. SIMPLE ENGLISH ONLY: Use everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max per sentence). Zero fancy vocabulary or poetic fluff.
+    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—not screaming or dramatic.
+    3. USE REAL NUMBERS & OBJECTS: Mention exact times (e.g., "It is 2:14 in the morning"), exact counts (e.g., "40,000 items", "90 minutes of battery"), and clever real-world objects (pallet jacks, magnets, bleach, duct tape, alarm clocks).
+    4. INSTANT HOOK: Sentence 1 must be a shocking, simple rule or fact that stops people from scrolling (example: "Automatic doors open for anything that walks up to them. They do not check for a pulse.").
+    5. STRUCTURE: Break the story into exactly 6 short scenes (each scene = 15 to 22 words of narration). End on a tense cliffhanger problem.
 
     Return ONLY valid JSON:
     {{
-      "caption": "POV: You're trapped in {chosen_location} during an outbreak... Would you survive? #zombieapocalypse #pov #scarystories #horror #survival #shorts",
+      "caption": "POV: You're {chosen_scenario} during an outbreak. Would you survive? #zombieapocalypse #survival #pov #storytime #shorts",
       "scenes": [
         {{
-          "narration": "Spoken line for scene 1...",
-          "image_prompt": "First-person POV horror shot inside {chosen_location}, pitch black shadows, dim flickering emergency light, terrifying silhouettes of infected figures approaching, hyperrealistic cinematic horror, 8k, no text"
+          "narration": "Automatic doors open for anything that walks up to them. They do not check for a pulse.",
+          "image_prompt": "First-person POV shot at night inside a brightly lit empty supermarket looking at sliding glass entrance doors, a pale motionless figure standing outside in the dark parking lot, realistic cinematic lighting, 8k, no text"
         }}
       ]
     }}
-    Every image_prompt MUST be first-person POV survival horror matching that exact scene's action, dark atmospheric lighting, photorealistic, with zero text in the image.
+    Make sure there are exactly 6 scenes. Every image_prompt must be photorealistic first-person POV matching that exact scene, with ZERO text or words inside the image.
     """
     models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
     for attempt in range(4):
@@ -120,17 +102,30 @@ def generate_ai_image(prompt, filename):
 
 
 async def generate_scene_audio(text, audio_path):
-    communicate = edge_tts.Communicate(text, VOICE, rate="+12%")
-    word_timings = []
-    with open(audio_path, "wb") as f:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                f.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                start = chunk["offset"] / 10_000_000
-                duration = chunk["duration"] / 10_000_000
-                word_timings.append((chunk["text"], start, start + duration))
-    return word_timings
+    communicate = edge_tts.Communicate(text, VOICE, rate="+6%")
+    await communicate.save(audio_path)
+
+
+def split_into_subtitle_chunks(text, total_duration):
+    words = text.strip().split()
+    if not words:
+        return []
+    # Group into 3-4 words per subtitle card so viewers can read effortlessly
+    chunk_size = 4
+    chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+    total_chars = sum(len(c) for c in chunks)
+
+    timed_chunks = []
+    current_time = 0.0
+    for c in chunks:
+        # Weight display time by character length so longer phrases stay on screen longer
+        share = (len(c) / total_chars) * total_duration if total_chars > 0 else (total_duration / len(chunks))
+        dur = max(0.35, share)
+        if current_time + dur > total_duration:
+            dur = max(0.1, total_duration - current_time)
+        timed_chunks.append((c.upper(), current_time, dur))
+        current_time += dur
+    return timed_chunks
 
 
 def build_pov_video(story, output_path="zombie_pov.mp4"):
@@ -140,39 +135,38 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         aud_file = f"scene_{idx}.mp3"
 
         generate_ai_image(scene["image_prompt"], img_file)
-        timings = asyncio.run(generate_scene_audio(scene["narration"], aud_file))
+        asyncio.run(generate_scene_audio(scene["narration"], aud_file))
 
         audio = AudioFileClip(aud_file)
         dur = audio.duration
 
+        # Smooth slow zoom-in for cinematic immersion
         base_img = (
             ImageClip(img_file)
             .with_duration(dur)
-            .resized(lambda t: 1.0 + 0.08 * (t / dur))
+            .resized(lambda t: 1.0 + 0.07 * (t / dur))
             .with_position(("center", "center"))
         )
         bg = CompositeVideoClip([base_img], size=(1080, 1920))
         layers = [bg]
 
-        for i in range(0, len(timings), 3):
-            chunk = timings[i:i+3]
-            phrase = " ".join([w[0].upper() for w in chunk])
-            start_t = chunk[0][1]
-            end_t = chunk[-1][2]
-
+        # Guaranteed bold, readable subtitles with dark backing box
+        subtitle_chunks = split_into_subtitle_chunks(scene["narration"], dur)
+        for phrase, start_t, sub_dur in subtitle_chunks:
             txt = (
                 TextClip(
-                    text=phrase,
-                    font_size=76,
-                    color="white",
+                    text=f" {phrase} ",
+                    font_size=68,
+                    color="#FFE600",
+                    bg_color="rgba(0,0,0,0.72)",
                     stroke_color="black",
-                    stroke_width=5,
+                    stroke_width=3,
                     method="caption",
                     size=(920, None)
                 )
-                .with_position(("center", 1350))
+                .with_position(("center", 1320))
                 .with_start(start_t)
-                .with_duration(max(0.2, end_t - start_t))
+                .with_duration(sub_dur)
             )
             layers.append(txt)
 
