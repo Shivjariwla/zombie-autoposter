@@ -36,9 +36,17 @@ def generate_zombie_story():
     }
     Include exactly 5 scenes. Every image_prompt must be first-person POV survival horror with no text in the image.
     """
-    response = client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
-    clean_json = re.sub(r"```json|```", "", response.text).strip()
-    return json.loads(clean_json)
+    models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
+    for attempt in range(4):
+        model_name = models_to_try[attempt % len(models_to_try)]
+        try:
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            clean_json = re.sub(r"```json|```", "", response.text).strip()
+            return json.loads(clean_json)
+        except Exception as e:
+            print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
+            time.sleep(10)
+    raise RuntimeError("All Gemini story generation attempts failed.")
 
 def generate_ai_image(prompt, filename):
     cf_account = os.environ["CF_ACCOUNT_ID"].strip()
