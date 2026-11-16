@@ -1,3 +1,4 @@
+import base64
 import asyncio
 import json
 import os
@@ -40,24 +41,28 @@ def generate_zombie_story():
     return json.loads(clean_json)
 
 def generate_ai_image(prompt, filename):
-    hf_token = os.getenv("HF_TOKEN")
-    # 1. Primary: Hugging Face Free Inference API (FLUX.1-schnell)
-    if hf_token:
-        hf_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-        headers = {"Authorization": f"Bearer {hf_token}"}
-        for _ in range(3):
-            res = requests.post(
-                hf_url,
-                headers=headers,
-                json={"inputs": prompt, "parameters": {"width": 768, "height": 1344}},
-                timeout=90
-            )
-            if res.status_code == 200 and len(res.content) > 10000:
-                with open(filename, "wb") as f:
-                    f.write(res.content)
-                return
-            time.sleep(5)
+    cf_account = os.environ["CF_ACCOUNT_ID"].strip()
+    cf_token = os.environ["CF_API_TOKEN"].strip()
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    headers = {"Authorization": f"Bearer {cf_token}"}
 
+    for attempt in range(3):
+        res = requests.post(
+            url,
+            headers=headers,
+            json={"prompt": prompt, "steps": 4},
+            timeout=90
+        )
+        if res.status_code == 200:
+            data = res.json()
+            img_b64 = data["result"]["image"]
+            with open(filename, "wb") as f:
+                f.write(base64.b64decode(img_b64))
+            return
+        print(f"Attempt {attempt + 1} failed ({res.status_code}): {res.text[:200]}")
+        time.sleep(5)
+
+    raise RuntimeError("Failed to generate AI image via Cloudflare.")
     # 2. Fallback: Pollinations standard endpoint
     encoded = urllib.parse.quote(prompt[:350])
     url = f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=1344&nologo=true"
