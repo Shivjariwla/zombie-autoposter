@@ -1,3 +1,6 @@
 {
-  "pending_part_2": false
+  "pending_part_2": true,
+  "scenario": "trapped inside a small-town hardware store",
+  "part1_script": "Automatic sliding doors open for any moving object. They do not check for a breathing pulse. It is 3:12 AM inside Miller Hardware. You have 4,000 steel tools and fifty generator batteries. Glass front windows are terrible shield armor. You kill the main circuit breaker to stay hidden. You stack eighty wooden pallets behind the entrance. Then you pile thirty heavy cement bags. At 4:05 AM, the automatic emergency generator kicks on. Bright fluorescent lights illuminate the whole store. Twenty dark silhouettes turn instantly and shatter the glass entrance. Comment Part 2 if you want to see how you survive.",
+  "last_line": "Twenty dark silhouettes turn instantly and shatter the glass entrance. Comment Part 2 if you want to see how you survive."
 }
