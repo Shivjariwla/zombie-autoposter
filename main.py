@@ -149,23 +149,91 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
     return output_path
 
 def publish_to_all_platforms(public_video_url, caption):
-    headers = {"Authorization": f"Bearer {BUFFER_ACCESS_TOKEN}"}
-    # 1. Fetch all connected profiles (Instagram, YouTube, TikTok)
-    profiles = requests.get("https://api.bufferapp.com/1/profiles.json", headers=headers).json()
-    profile_ids = [p["id"] for p in profiles]
-
-    if not profile_ids:
-        raise RuntimeError("No social channels connected to Buffer.")
-
-    # 2. Publish immediately to all 3 channels
-    payload = {
-        "profile_ids[]": profile_ids,
-        "text": caption,
-        "media[video]": public_video_url,
-        "now": "true"
+    url = "https://api.buffer.com"
+    headers = {
+        "Authorization": f"Bearer {BUFFER_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
     }
-    res = requests.post("https://api.bufferapp.com/1/updates/create.json", headers=headers, data=payload).json()
-    print("Buffer publish response:", res)
+
+    # 1. Fetch your Buffer organization ID
+    org_query = """
+    query {
+      account {
+        organizations {
+          id
+        }
+      }
+    }
+    """
+    org_res = requests.post(url, headers=headers, json={"query": org_query}).json()
+    if "errors" in org_res:
+        raise RuntimeError(f"Buffer auth/org error: {org_res['errors']}")
+
+    orgs = org_res["data"]["account"]["organizations"]
+    if not orgs:
+        raise RuntimeError("No Buffer organizations found.")
+    org_id = orgs[0]["id"]
+
+    # 2. Fetch all connected social channels (Instagram, YouTube, TikTok)
+    channels_query = """
+    query GetChannels($orgId: OrganizationId!) {
+      channels(input: { organizationId: $orgId }) {
+        id
+        name
+        service
+        isDisconnected
+      }
+    }
+    """
+    ch_res = requests.post(
+        url,
+        headers=headers,
+        json={"query": channels_query, "variables": {"orgId": org_id}}
+    ).json()
+
+    channels = ch_res.get("data", {}).get("channels", [])
+    active_channels = [c for c in channels if not c.get("isDisconnected")]
+    if not active_channels:
+        raise RuntimeError(f"No active channels connected in Buffer. Response: {ch_res}")
+
+    # 3. Publish the video immediately to each connected channel
+    create_post_mutation = """
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        ... on PostActionSuccess {
+          post {
+            id
+            status
+          }
+        }
+        ... on MutationError {
+          message
+        }
+      }
+    }
+    """
+    for ch in active_channels:
+        variables = {
+            "input": {
+                "text": caption,
+                "channelId": ch["id"],
+                "schedulingType": "automatic",
+                "mode": "shareNow",
+                "assets": [
+                    {
+                        "video": {
+                            "url": public_video_url
+                        }
+                    }
+                ]
+            }
+        }
+        post_res = requests.post(
+            url,
+            headers=headers,
+            json={"query": create_post_mutation, "variables": variables}
+        ).json()
+        print(f"Published to {ch['service']} ({ch['name']}):", post_res)
 
 if __name__ == "__main__":
     story = generate_zombie_story()
