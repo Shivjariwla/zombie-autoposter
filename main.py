@@ -1,19 +1,27 @@
 import asyncio
 import base64
 import json
-import math
 import os
 import random
 import re
 import time
+import numpy as np
 import requests
 import edge_tts
 import cloudinary
 import cloudinary.uploader
 from google import genai
-from moviepy import ImageClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+from moviepy import (
+    ImageClip,
+    AudioFileClip,
+    AudioArrayClip,
+    CompositeAudioClip,
+    TextClip,
+    CompositeVideoClip,
+    concatenate_videoclips,
+)
 
-VOICE = "en-US-AndrewNeural"  # Calm, natural, engaging storyteller voice
+VOICE = "en-US-AndrewNeural"
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CLOUDINARY_URL = os.environ["CLOUDINARY_URL"]
 BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
@@ -25,7 +33,7 @@ def generate_zombie_story():
     scenarios = [
         "locked inside a 24-hour supermarket after midnight",
         "trapped inside an IKEA warehouse after closing time",
-        "stuck on the top floor of a luxury apartment building with dead power",
+        "stuck on the 48th floor of a luxury apartment building with dead power",
         "locked inside an underground subway station control booth",
         "barricaded inside a 24-hour highway gas station during a blackout",
         "trapped inside an overnight sleeper train stopped in the middle of nowhere",
@@ -45,11 +53,15 @@ def generate_zombie_story():
     Model the exact writing style after viral survival channels like "Nobody Gets In":
 
     CRITICAL WRITING RULES:
-    1. SIMPLE ENGLISH ONLY: Use everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max per sentence). Zero fancy vocabulary or poetic fluff.
-    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—not screaming or dramatic.
-    3. USE REAL NUMBERS & OBJECTS: Mention exact times (e.g., "It is 2:14 in the morning"), exact counts (e.g., "40,000 items", "90 minutes of battery"), and clever real-world objects (pallet jacks, magnets, bleach, duct tape, alarm clocks).
-    4. INSTANT HOOK: Sentence 1 must be a shocking, simple rule or fact that stops people from scrolling (example: "Automatic doors open for anything that walks up to them. They do not check for a pulse.").
-    5. STRUCTURE: Break the story into exactly 6 short scenes (each scene = 15 to 22 words of narration). End on a tense cliffhanger problem.
+    1. SIMPLE ENGLISH ONLY: Use everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max per sentence).
+    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—not screaming.
+    3. USE REAL NUMBERS & OBJECTS: Mention exact times (e.g., "It is 2:14 in the morning"), exact counts (e.g., "40,000 items", "90 minutes of battery"), and clever real-world objects.
+    4. INSTANT HOOK: Sentence 1 must be a shocking, simple rule or fact that stops scrolling.
+    5. STRUCTURE: Break the story into exactly 6 short scenes (15 to 22 words of narration per scene). End on a chilling cliffhanger.
+
+    VISUAL PROMPT RULES (VERY IMPORTANT):
+    - Every image_prompt MUST be vertical 9:16 cinematic dark horror photography.
+    - NEVER include human hands, arms, or fingers in the foreground (AI renders hands badly). Focus on moody hallways, barricaded doors, shadows through glass, emergency red lights, flashlights on the floor, and silhouettes.
 
     Return ONLY valid JSON:
     {{
@@ -57,11 +69,11 @@ def generate_zombie_story():
       "scenes": [
         {{
           "narration": "Automatic doors open for anything that walks up to them. They do not check for a pulse.",
-          "image_prompt": "First-person POV shot at night inside a brightly lit empty supermarket looking at sliding glass entrance doors, a pale motionless figure standing outside in the dark parking lot, realistic cinematic lighting, 8k, no text"
+          "image_prompt": "Vertical 9:16 dark cinematic movie still inside an empty modern supermarket at 2 AM, sliding glass entrance doors partially open, eerie silhouette standing motionless in the foggy dark parking lot outside, cold blue fluorescent lighting, 35mm film grain, photorealistic, no text"
         }}
       ]
     }}
-    Make sure there are exactly 6 scenes. Every image_prompt must be photorealistic first-person POV matching that exact scene, with ZERO text or words inside the image.
+    Make sure there are exactly 6 scenes and ZERO text in any image.
     """
     models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
     for attempt in range(4):
@@ -82,13 +94,16 @@ def generate_ai_image(prompt, filename):
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     headers = {"Authorization": f"Bearer {cf_token}"}
 
+    # Full 9:16 vertical resolution (768x1344) eliminates black bars completely
+    payload = {
+        "prompt": prompt,
+        "width": 768,
+        "height": 1344,
+        "steps": 4
+    }
+
     for attempt in range(3):
-        res = requests.post(
-            url,
-            headers=headers,
-            json={"prompt": prompt, "steps": 4},
-            timeout=90
-        )
+        res = requests.post(url, headers=headers, json=payload, timeout=90)
         if res.status_code == 200:
             data = res.json()
             img_b64 = data["result"]["image"]
@@ -106,21 +121,34 @@ async def generate_scene_audio(text, audio_path):
     await communicate.save(audio_path)
 
 
+def create_horror_ambience(duration, fps=44100):
+    """Synthesizes a subtle dark bass drone + slow tense heartbeat pulse."""
+    t = np.linspace(0, duration, int(fps * duration), endpoint=False)
+    # Deep sub-bass horror drone (55 Hz + eerie detuned 58 Hz)
+    drone = 0.5 * np.sin(2 * np.pi * 55 * t) + 0.35 * np.sin(2 * np.pi * 58.2 * t)
+    # Slow tense heartbeat pulse every ~1.2 seconds
+    beat_phase = t % 1.2
+    lub = np.exp(-35 * beat_phase) * np.sin(2 * np.pi * 48 * t)
+    dub = np.exp(-35 * np.maximum(0, beat_phase - 0.22)) * (beat_phase >= 0.22) * np.sin(2 * np.pi * 42 * t)
+    mix = (0.045 * drone) + (0.09 * (lub + dub))
+    stereo = np.column_stack((mix, mix)).astype(np.float32)
+    return AudioArrayClip(stereo, fps=fps)
+
+
 def split_into_subtitle_chunks(text, total_duration):
     words = text.strip().split()
     if not words:
         return []
-    # Group into 3-4 words per subtitle card so viewers can read effortlessly
-    chunk_size = 4
+    # 2 to 3 words per pop-up chunk so viewers read at a glance
+    chunk_size = 3
     chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
     total_chars = sum(len(c) for c in chunks)
 
     timed_chunks = []
     current_time = 0.0
     for c in chunks:
-        # Weight display time by character length so longer phrases stay on screen longer
         share = (len(c) / total_chars) * total_duration if total_chars > 0 else (total_duration / len(chunks))
-        dur = max(0.35, share)
+        dur = max(0.3, share)
         if current_time + dur > total_duration:
             dur = max(0.1, total_duration - current_time)
         timed_chunks.append((c.upper(), current_time, dur))
@@ -140,31 +168,31 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         audio = AudioFileClip(aud_file)
         dur = audio.duration
 
-        # Smooth slow zoom-in for cinematic immersion
-        base_img = (
-            ImageClip(img_file)
-            .with_duration(dur)
-            .resized(lambda t: 1.0 + 0.07 * (t / dur))
-            .with_position(("center", "center"))
-        )
-        bg = CompositeVideoClip([base_img], size=(1080, 1920))
+        # Scale cleanly to full 1080x1920 vertical frame + alternate zoom-in / zoom-out
+        raw_clip = ImageClip(img_file).resized((1080, 1920)).with_duration(dur)
+        if idx % 2 == 0:
+            animated_img = raw_clip.resized(lambda t, d=dur: 1.0 + 0.08 * (t / d))
+        else:
+            animated_img = raw_clip.resized(lambda t, d=dur: 1.08 - 0.08 * (t / d))
+
+        bg = CompositeVideoClip([animated_img.with_position(("center", "center"))], size=(1080, 1920))
         layers = [bg]
 
-        # Guaranteed bold, readable subtitles with dark backing box
+        # Crisp center-screen captions with vertical padding so letters never clip
         subtitle_chunks = split_into_subtitle_chunks(scene["narration"], dur)
         for phrase, start_t, sub_dur in subtitle_chunks:
             txt = (
                 TextClip(
-                    text=f" {phrase} ",
-                    font_size=68,
+                    text=f"\n{phrase}\n",
+                    font_size=74,
                     color="#FFE600",
-                    bg_color="#000000B8",
                     stroke_color="black",
-                    stroke_width=3,
+                    stroke_width=6,
                     method="caption",
-                    size=(920, None)
+                    size=(940, None),
+                    text_align="center"
                 )
-                .with_position(("center", 1320))
+                .with_position(("center", 1180))
                 .with_start(start_t)
                 .with_duration(sub_dur)
             )
@@ -173,7 +201,12 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         scene_comp = CompositeVideoClip(layers, size=(1080, 1920)).with_audio(audio)
         scene_clips.append(scene_comp)
 
-    final_video = concatenate_videoclips(scene_clips, method="compose")
+    video = concatenate_videoclips(scene_clips, method="compose")
+    # Layer dark ambient drone + heartbeat underneath the narration
+    ambience = create_horror_ambience(video.duration)
+    final_audio = CompositeAudioClip([video.audio, ambience])
+    final_video = video.with_audio(final_audio)
+
     final_video.write_videofile(output_path, fps=30, codec="libx264", audio_codec="aac")
     return output_path
 
