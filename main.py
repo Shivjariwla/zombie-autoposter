@@ -1,15 +1,14 @@
-import base64
 import asyncio
+import base64
 import json
 import os
+import random
 import re
 import time
-import urllib.parse
 import requests
 import edge_tts
 import cloudinary
 import cloudinary.uploader
-import random
 from google import genai
 from moviepy import ImageClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
 
@@ -19,6 +18,7 @@ CLOUDINARY_URL = os.environ["CLOUDINARY_URL"]
 BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
+
 
 def generate_zombie_story():
     locations = [
@@ -92,7 +92,8 @@ def generate_zombie_story():
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
             time.sleep(10)
     raise RuntimeError("All Gemini story generation attempts failed.")
-    
+
+
 def generate_ai_image(prompt, filename):
     cf_account = os.environ["CF_ACCOUNT_ID"].strip()
     cf_token = os.environ["CF_API_TOKEN"].strip()
@@ -116,17 +117,7 @@ def generate_ai_image(prompt, filename):
         time.sleep(5)
 
     raise RuntimeError("Failed to generate AI image via Cloudflare.")
-    # 2. Fallback: Pollinations standard endpoint
-    encoded = urllib.parse.quote(prompt[:350])
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=1344&nologo=true"
-    for _ in range(3):
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=90)
-        if res.status_code == 200 and len(res.content) > 10000:
-            with open(filename, "wb") as f:
-                f.write(res.content)
-            return
-        time.sleep(5)
-    raise RuntimeError("Failed to generate AI image.")
+
 
 async def generate_scene_audio(text, audio_path):
     communicate = edge_tts.Communicate(text, VOICE, rate="+12%")
@@ -141,6 +132,7 @@ async def generate_scene_audio(text, audio_path):
                 word_timings.append((chunk["text"], start, start + duration))
     return word_timings
 
+
 def build_pov_video(story, output_path="zombie_pov.mp4"):
     scene_clips = []
     for idx, scene in enumerate(story["scenes"]):
@@ -153,7 +145,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         audio = AudioFileClip(aud_file)
         dur = audio.duration
 
-        # Dramatic first-person POV slow zoom
         base_img = (
             ImageClip(img_file)
             .with_duration(dur)
@@ -163,7 +154,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         bg = CompositeVideoClip([base_img], size=(1080, 1920))
         layers = [bg]
 
-        # 3-word bold survival captions
         for i in range(0, len(timings), 3):
             chunk = timings[i:i+3]
             phrase = " ".join([w[0].upper() for w in chunk])
@@ -193,6 +183,7 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
     final_video.write_videofile(output_path, fps=30, codec="libx264", audio_codec="aac")
     return output_path
 
+
 def publish_to_all_platforms(public_video_url, caption):
     url = "https://api.buffer.com"
     headers = {
@@ -200,7 +191,6 @@ def publish_to_all_platforms(public_video_url, caption):
         "Content-Type": "application/json"
     }
 
-    # 1. Fetch your Buffer organization ID
     org_query = """
     query {
       account {
@@ -219,7 +209,6 @@ def publish_to_all_platforms(public_video_url, caption):
         raise RuntimeError("No Buffer organizations found.")
     org_id = orgs[0]["id"]
 
-    # 2. Fetch all connected social channels (Instagram, YouTube, TikTok)
     channels_query = """
     query GetChannels($orgId: OrganizationId!) {
       channels(input: { organizationId: $orgId }) {
@@ -241,7 +230,6 @@ def publish_to_all_platforms(public_video_url, caption):
     if not active_channels:
         raise RuntimeError(f"No active channels connected in Buffer. Response: {ch_res}")
 
-    # 3. Publish the video immediately to each connected channel
     create_post_mutation = """
     mutation CreatePost($input: CreatePostInput!) {
       createPost(input: $input) {
@@ -257,7 +245,7 @@ def publish_to_all_platforms(public_video_url, caption):
       }
     }
     """
-for ch in active_channels:
+    for ch in active_channels:
         service = ch["service"].lower()
         post_input = {
             "text": caption,
@@ -281,14 +269,13 @@ for ch in active_channels:
                 }
             }
         elif service == "youtube":
-            # Use first sentence of caption (max 100 chars) as YouTube Shorts title
             yt_title = caption.split("#")[0].strip()[:90] or "POV: Zombie Outbreak Survival"
             if "#shorts" not in yt_title.lower():
                 yt_title = f"{yt_title} #shorts"[:100]
             post_input["metadata"] = {
                 "youtube": {
                     "title": yt_title,
-                    "categoryId": "24"  # 24 = Entertainment
+                    "categoryId": "24"
                 }
             }
 
@@ -299,6 +286,7 @@ for ch in active_channels:
         ).json()
         print(f"Published to {ch['service']} ({ch['name']}):", post_res)
 
+
 if __name__ == "__main__":
     story = generate_zombie_story()
     video_file = build_pov_video(story)
@@ -306,6 +294,6 @@ if __name__ == "__main__":
     upload = cloudinary.uploader.upload(video_file, resource_type="video")
     try:
         publish_to_all_platforms(upload["secure_url"], story["caption"])
-        time.sleep(60)  # Give Buffer 60s to download the video before cleanup
+        time.sleep(60)
     finally:
         cloudinary.uploader.destroy(upload["public_id"], resource_type="video")
