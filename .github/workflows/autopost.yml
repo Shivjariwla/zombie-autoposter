@@ -1,0 +1,22 @@
+name: Daily Zombie POV Autoposter
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # Runs automatically every day at 5:00 PM EST
+  workflow_dispatch:       # Lets you test-run immediately with 1 click
+
+jobs:
+  generate-and-post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
+      - run: pip install google-genai edge-tts requests cloudinary moviepy
+      - env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+          BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
+        run: python main.py
