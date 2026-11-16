@@ -20,6 +20,7 @@ from moviepy import (
     CompositeVideoClip,
     concatenate_videoclips,
 )
+from moviepy.video.fx import CrossFadeIn, CrossFadeOut
 
 VOICE = "en-US-AndrewNeural"
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
@@ -49,23 +50,25 @@ def generate_zombie_story():
 
     client = genai.Client(api_key=GEMINI_API_KEY)
     prompt = f"""
-    Write a viral 40-second first-person ("you") zombie survival story about being {chosen_scenario}.
+    Write a viral 40-second first-person ("you") zombie survival story (Part 1) about being {chosen_scenario}.
     Model the exact writing style after viral survival channels like "Nobody Gets In":
 
     CRITICAL WRITING RULES:
     1. SIMPLE ENGLISH ONLY: Use everyday words a 12-year-old understands. Short, punchy sentences (6 to 12 words max per sentence).
-    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—not screaming.
+    2. COLD, CALM, PRACTICAL TONE: Sound calm, smart, and matter-of-fact—never screaming or dramatic.
     3. USE REAL NUMBERS & OBJECTS: Mention exact times (e.g., "It is 2:14 in the morning"), exact counts (e.g., "40,000 items", "90 minutes of battery"), and clever real-world objects.
-    4. INSTANT HOOK: Sentence 1 must be a shocking, simple rule or fact that stops scrolling.
-    5. STRUCTURE: Break the story into exactly 6 short scenes (15 to 22 words of narration per scene). End on a chilling cliffhanger.
+    4. INSTANT HOOK: Scene 1 must open with a shocking, simple rule or fact that stops scrolling.
+    5. STRUCTURE (EXACTLY 6 SCENES, 15-22 WORDS EACH):
+       - Scenes 1 to 5: Explain the setup, the rules of the building, and your clever survival plan.
+       - Scene 6 (THE CLIFFHANGER): MUST end abruptly at the exact second a new, impossible threat happens (e.g., the backup generator dies, a human survivor knocks with a warning, the steel shutter bends open, or your walkie-talkie crackles with terrible news). DO NOT resolve the story—cut off right at peak suspense so viewers beg for Part 2 in the comments!
 
     VISUAL PROMPT RULES (VERY IMPORTANT):
     - Every image_prompt MUST be vertical 9:16 cinematic dark horror photography.
-    - NEVER include human hands, arms, or fingers in the foreground (AI renders hands badly). Focus on moody hallways, barricaded doors, shadows through glass, emergency red lights, flashlights on the floor, and silhouettes.
+    - NEVER include human hands, arms, or fingers in the foreground. Focus on moody hallways, barricaded doors, shadows through glass, emergency red lights, flashlights on the floor, and silhouettes.
 
     Return ONLY valid JSON:
     {{
-      "caption": "POV: You're {chosen_scenario} during an outbreak. Would you survive? #zombieapocalypse #survival #pov #storytime #shorts",
+      "caption": "Part 1 | POV: You're {chosen_scenario} during an outbreak. Comment if you want Part 2 👇 #zombieapocalypse #survival #pov #storytime #shorts",
       "scenes": [
         {{
           "narration": "Automatic doors open for anything that walks up to them. They do not check for a pulse.",
@@ -131,10 +134,11 @@ def create_horror_ambience(duration, fps=44100):
 
 
 def split_into_subtitle_chunks(text, total_duration):
+    """Groups narration into natural 4-5 word reading phrases for smooth subtitles."""
     words = text.strip().split()
     if not words:
         return []
-    chunk_size = 3
+    chunk_size = 4
     chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
     total_chars = sum(len(c) for c in chunks)
 
@@ -142,10 +146,10 @@ def split_into_subtitle_chunks(text, total_duration):
     current_time = 0.0
     for c in chunks:
         share = (len(c) / total_chars) * total_duration if total_chars > 0 else (total_duration / len(chunks))
-        dur = max(0.3, share)
+        dur = max(0.4, share)
         if current_time + dur > total_duration:
-            dur = max(0.1, total_duration - current_time)
-        timed_chunks.append((c.upper(), current_time, dur))
+            dur = max(0.15, total_duration - current_time)
+        timed_chunks.append((c, current_time, dur))
         current_time += dur
     return timed_chunks
 
@@ -162,7 +166,6 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         audio = AudioFileClip(aud_file)
         dur = audio.duration
 
-        # Center-crop square Flux output cleanly to fill full 1080x1920 vertical frame
         raw_clip = (
             ImageClip(img_file)
             .resized(height=1920)
@@ -177,22 +180,25 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         bg = CompositeVideoClip([animated_img.with_position(("center", "center"))], size=(1080, 1920))
         layers = [bg]
 
+        # Smooth, clean editorial subtitles (crisp white, subtle outline, soft fade)
         subtitle_chunks = split_into_subtitle_chunks(scene["narration"], dur)
         for phrase, start_t, sub_dur in subtitle_chunks:
+            fade_dur = min(0.12, sub_dur * 0.25)
             txt = (
                 TextClip(
                     text=f"\n{phrase}\n",
-                    font_size=74,
-                    color="#FFE600",
-                    stroke_color="black",
-                    stroke_width=6,
+                    font_size=62,
+                    color="#FFFFFF",
+                    stroke_color="#0A0A0A",
+                    stroke_width=2,
                     method="caption",
-                    size=(940, None),
+                    size=(900, None),
                     text_align="center"
                 )
-                .with_position(("center", 1180))
+                .with_position(("center", 1240))
                 .with_start(start_t)
                 .with_duration(sub_dur)
+                .with_effects([CrossFadeIn(fade_dur), CrossFadeOut(fade_dur)])
             )
             layers.append(txt)
 
@@ -293,7 +299,7 @@ def publish_to_all_platforms(public_video_url, caption):
                 }
             }
         elif service == "youtube":
-            yt_title = caption.split("#")[0].strip()[:90] or "POV: Zombie Outbreak Survival"
+            yt_title = caption.split("#")[0].strip()[:90] or "Part 1 | POV: Zombie Outbreak Survival"
             if "#shorts" not in yt_title.lower():
                 yt_title = f"{yt_title} #shorts"[:100]
             post_input["metadata"] = {
