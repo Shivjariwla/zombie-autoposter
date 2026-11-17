@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
-      - run: pip install google-genai edge-tts requests cloudinary moviepy
+      - run: pip install google-genai edge-tts gTTS requests cloudinary moviepy
       - env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
