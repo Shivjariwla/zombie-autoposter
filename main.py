@@ -8,6 +8,7 @@ import time
 import numpy as np
 import requests
 import edge_tts
+from gtts import gTTS
 import cloudinary
 import cloudinary.uploader
 from google import genai
@@ -22,7 +23,12 @@ from moviepy import (
 )
 from moviepy.video.fx import CrossFadeIn, CrossFadeOut
 
-VOICE = "en-US-AndrewNeural"
+VOICES_TO_TRY = [
+    "en-US-AndrewNeural",
+    "en-US-ChristopherNeural",
+    "en-US-BrianNeural",
+    "en-GB-RyanNeural"
+]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CLOUDINARY_URL = os.environ["CLOUDINARY_URL"]
 BUFFER_ACCESS_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
@@ -53,7 +59,6 @@ def generate_zombie_story():
     client = genai.Client(api_key=GEMINI_API_KEY)
 
     if saved_state:
-        # AUTOMATICALLY GENERATE PART 2 FROM SAVED PART 1
         scenario = saved_state["scenario"]
         part1_summary = saved_state["part1_script"]
         last_line = saved_state["last_line"]
@@ -94,7 +99,6 @@ def generate_zombie_story():
         Make sure there are exactly 6 scenes and ZERO text in any image.
         """
     else:
-        # GENERATE PART 1 WITH A TRUE MID-ACTION CLIFFHANGER
         scenarios = [
             "locked inside a 24-hour supermarket after midnight",
             "trapped inside an IKEA warehouse after closing time",
@@ -143,8 +147,8 @@ def generate_zombie_story():
         Make sure there are exactly 6 scenes and ZERO text in any image.
         """
 
-    models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.5-flash"]
-    for attempt in range(8):
+    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+    for attempt in range(9):
         model_name = models_to_try[attempt % len(models_to_try)]
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
@@ -155,7 +159,7 @@ def generate_zombie_story():
             return story
         except Exception as e:
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
-            time.sleep(15)
+            time.sleep(12)
     raise RuntimeError("All Gemini story generation attempts failed.")
 
 
@@ -170,7 +174,7 @@ def generate_ai_image(prompt, filename):
         "steps": 4
     }
 
-    for attempt in range(3):
+    for attempt in range(4):
         res = requests.post(url, headers=headers, json=payload, timeout=90)
         if res.status_code == 200:
             data = res.json()
@@ -178,15 +182,35 @@ def generate_ai_image(prompt, filename):
             with open(filename, "wb") as f:
                 f.write(base64.b64decode(img_b64))
             return
-        print(f"Attempt {attempt + 1} failed ({res.status_code}): {res.text[:200]}")
+        print(f"Image attempt {attempt + 1} failed ({res.status_code}): {res.text[:200]}")
         time.sleep(5)
 
     raise RuntimeError("Failed to generate AI image via Cloudflare.")
 
 
-async def generate_scene_audio(text, audio_path):
-    communicate = edge_tts.Communicate(text, VOICE, rate="+6%")
+async def _try_edge_tts(text, voice, audio_path):
+    communicate = edge_tts.Communicate(text, voice, rate="+6%")
     await communicate.save(audio_path)
+
+
+def generate_scene_audio(text, audio_path):
+    """Tries Edge-TTS across multiple voices with retries, falling back to gTTS if blocked."""
+    clean_text = re.sub(r"[^\w\s.,!?'-]", "", text).strip() or "Stay quiet. Do not move."
+
+    for attempt in range(4):
+        voice = VOICES_TO_TRY[attempt % len(VOICES_TO_TRY)]
+        try:
+            asyncio.run(_try_edge_tts(clean_text, voice, audio_path))
+            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+                return
+        except Exception as e:
+            print(f"Edge-TTS attempt {attempt + 1} ({voice}) failed: {e}")
+            time.sleep(3)
+
+    # Bulletproof fallback if Microsoft Edge TTS throttles the GitHub runner IP
+    print("Falling back to gTTS for scene audio...")
+    tts = gTTS(text=clean_text, lang="en", slow=False)
+    tts.save(audio_path)
 
 
 def create_horror_ambience(duration, fps=44100):
@@ -228,7 +252,7 @@ def build_pov_video(story, output_path="zombie_pov.mp4"):
         aud_file = f"scene_{idx}.mp3"
 
         generate_ai_image(scene["image_prompt"], img_file)
-        asyncio.run(generate_scene_audio(scene["narration"], aud_file))
+        generate_scene_audio(scene["narration"], aud_file)
 
         audio = AudioFileClip(aud_file)
         dur = audio.duration
@@ -391,7 +415,6 @@ if __name__ == "__main__":
     try:
         publish_to_all_platforms(upload["secure_url"], story["caption"])
 
-        # Save or clear Part 1 -> Part 2 memory for the next scheduled run
         if story["_mode"] == "PART_1":
             full_script = " ".join(s["narration"] for s in story["scenes"])
             last_scene_text = story["scenes"][-1]["narration"]
