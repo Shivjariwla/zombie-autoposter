@@ -147,8 +147,8 @@ def generate_zombie_story():
         Make sure there are exactly 6 scenes and ZERO text in any image.
         """
 
-    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
-    for attempt in range(9):
+    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash"]
+    for attempt in range(4):
         model_name = models_to_try[attempt % len(models_to_try)]
         try:
             response = client.models.generate_content(model=model_name, contents=prompt)
@@ -159,8 +159,43 @@ def generate_zombie_story():
             return story
         except Exception as e:
             print(f"Story attempt {attempt + 1} with {model_name} failed: {e}")
-            time.sleep(12)
-    raise RuntimeError("All Gemini story generation attempts failed.")
+            time.sleep(10)
+
+    # Automatic Cloudflare Llama 3.3 70B fallback when Gemini has 503 high demand
+    print("Gemini busy (503) — switching to Cloudflare Llama 3.3 70B fallback...")
+    cf_account = os.environ["CF_ACCOUNT_ID"].strip()
+    cf_token = os.environ["CF_API_TOKEN"].strip()
+    cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    cf_headers = {"Authorization": f"Bearer {cf_token}"}
+
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                cf_url,
+                headers=cf_headers,
+                json={
+                    "messages": [
+                        {"role": "system", "content": "You are a viral short-form survival storyteller. Output ONLY valid raw JSON with no markdown or extra commentary."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": 1200
+                },
+                timeout=60
+            )
+            if res.status_code == 200:
+                raw_text = res.json()["result"]["response"]
+                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+                clean_json = json_match.group(0) if json_match else raw_text
+                story = json.loads(clean_json)
+                story["_mode"] = mode
+                story["_scenario"] = scenario
+                return story
+            print(f"Cloudflare story attempt {attempt + 1} failed ({res.status_code}): {res.text[:200]}")
+        except Exception as e:
+            print(f"Cloudflare story attempt {attempt + 1} error: {e}")
+        time.sleep(5)
+
+    raise RuntimeError("All story generation attempts failed.")
 
 
 def generate_ai_image(prompt, filename):
@@ -207,7 +242,6 @@ def generate_scene_audio(text, audio_path):
             print(f"Edge-TTS attempt {attempt + 1} ({voice}) failed: {e}")
             time.sleep(3)
 
-    # Bulletproof fallback if Microsoft Edge TTS throttles the GitHub runner IP
     print("Falling back to gTTS for scene audio...")
     tts = gTTS(text=clean_text, lang="en", slow=False)
     tts.save(audio_path)
