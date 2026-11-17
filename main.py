@@ -183,10 +183,13 @@ def generate_zombie_story():
                 timeout=60
             )
             if res.status_code == 200:
-                raw_text = res.json()["result"]["response"]
-                json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-                clean_json = json_match.group(0) if json_match else raw_text
-                story = json.loads(clean_json)
+                raw_response = res.json()["result"]["response"]
+                if isinstance(raw_response, dict):
+                    story = raw_response
+                else:
+                    json_match = re.search(r"\{.*\}", str(raw_response), re.DOTALL)
+                    clean_json = json_match.group(0) if json_match else str(raw_response)
+                    story = json.loads(clean_json)
                 story["_mode"] = mode
                 story["_scenario"] = scenario
                 return story
