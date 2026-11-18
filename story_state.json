@@ -1,3 +1,6 @@
 {
-  "pending_part_2": false
+  "pending_part_2": true,
+  "scenario": "locked inside an airport terminal after all flights are grounded",
+  "part1_script": "Glass walls keep people in, but automatic doors open for anything. They do not check for a pulse. It is 3:12 AM in Terminal 4. You have 4,000 water bottles and 80 heavy metal luggage carts. You stack metal baggage carts against the entrance doors. Then you jam heavy nylon security belts into the handles. Outside, 300 infected swarm the curb. The thick terminal glass will keep them out for 12 hours. At 4:05 AM, Gate 12 shakes violently. A loose plane crashes through the jet bridge glass. Infected pour inside through the gate. You run for the metal detector. Comment Part 2 if you want to see how you survive.",
+  "last_line": "Infected pour inside through the gate. You run for the metal detector. Comment Part 2 if you want to see how you survive."
 }
