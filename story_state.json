@@ -1,6 +1,3 @@
 {
-  "pending_part_2": true,
-  "scenario": "stuck inside a multi-story underground parking garage",
-  "part1_script": "Automatic doors open for anything that walks up to them. They do not check for a pulse. You have 4 bottles of water and 2 energy bars. You barricaded the door with 17 cars. You have 90 minutes of flashlight battery left. The power just came back on. Elevators are moving. A zombie just stepped out of the elevator and is coming for you. Comment Part 2 if you want to see how you survive.",
-  "last_line": "A zombie just stepped out of the elevator and is coming for you. Comment Part 2 if you want to see how you survive."
+  "pending_part_2": false
 }
