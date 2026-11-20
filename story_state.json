@@ -1,3 +1,6 @@
 {
-  "pending_part_2": false
+  "pending_part_2": true,
+  "scenario": "locked inside a 24-hour supermarket after midnight",
+  "part1_script": "Automatic doors open for anything with weight. They do not care if a person is dead or alive. It is 2:14 in the morning. You have ninety pallets of canned food, but zero open exits. You pull the main kill-switch behind register four. Then, you wedge two heavy electric forklifts against the front glass. A dark supermarket is an impenetrable fortress. You tape thick black cardboard over every single window along aisle one. At 2:41, the automated roof generator suddenly roars to life. Blinding halogen floodlights illuminate the entire parking lot. Eighty infected slam the glass, tipping the forklift onto you. Comment Part 2 if you want to see how you survive.",
+  "last_line": "Eighty infected slam the glass, tipping the forklift onto you. Comment Part 2 if you want to see how you survive."
 }
