@@ -1,3 +1,6 @@
 {
-  "pending_part_2": false
+  "pending_part_2": true,
+  "scenario": "trapped inside an overnight sleeper train stopped in the middle of nowhere",
+  "part1_script": "The train stopped in a dark forest at 3:17 AM. Emergency doors unlock automatically when the engine dies. You have 12 cars, 84 passengers, and 14 heavy fire extinguishers. You must secure car seven first. The infected follow bright lights and loud sounds. You smash every bulb in the hallway using a steel rod. You stack 26 heavy suitcases against the glass door. You jam two leather belts through the emergency handles. At 3:42 AM, the backup generator surges back to life. Bright ceiling lights illuminate the entire sleeper car. A dark horde sprints from the woods. The glass door shatters. Comment Part 2 if you want to see how you survive.",
+  "last_line": "A dark horde sprints from the woods. The glass door shatters. Comment Part 2 if you want to see how you survive."
 }
