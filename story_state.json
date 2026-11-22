@@ -1,3 +1,6 @@
 {
-  "pending_part_2": false
+  "pending_part_2": true,
+  "scenario": "locked inside a 24-hour supermarket after midnight",
+  "part1_script": "Automatic sliding doors do not check for a heartbeat. They just open for movement. At 2:14 AM, the grid died. You have 14,000 cans of food and 4,000 gallons of water. But glass walls mean zero protection. You zip-tie the metal security gate shut. Then you stack 80 heavy wooden pallets against the glass. You tape black trash bags over every window. You hide in aisle four with a heavy crowbar. At 3:05 AM, the emergency generator kicks on. Bright fluorescent lights illuminate the entire parking lot. Speakers blast music. Fifty runners smash through the front glass. Comment Part 2 if you want to see how you survive.",
+  "last_line": "Speakers blast music. Fifty runners smash through the front glass. Comment Part 2 if you want to see how you survive."
 }
