@@ -7,12 +7,14 @@ import re
 import time
 import numpy as np
 import requests
+import soundfile as sf
 import edge_tts
 from gtts import gTTS
 import cloudinary
 import cloudinary.uploader
 from PIL import Image, ImageDraw, ImageFont
 from faster_whisper import WhisperModel
+from kokoro import KPipeline
 from google import genai
 from moviepy import (
     ImageClip,
@@ -30,27 +32,41 @@ SERIES_FILE = "series_state.json"
 
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
+# Natural human-acting Kokoro-82M voice IDs (warm, conversational, non-robotic)
 MALE_VOICES = [
-    "en-US-AndrewNeural",
-    "en-US-BrianNeural",
-    "en-US-GuyNeural",
-    "en-US-ChristopherNeural",
+    "am_michael",  # Warm, natural American male
+    "am_puck",     # Expressive, witty, energetic male
+    "am_fenrir",   # Deep, grounded, dramatic male
+    "am_adam",     # Casual, everyday conversational male
 ]
 
 FEMALE_VOICES = [
-    "en-US-AvaNeural",
-    "en-US-EmmaNeural",
-    "en-US-AriaNeural",
-    "en-US-JennyNeural",
+    "af_heart",    # Warm, expressive, realistic American female
+    "af_bella",    # Emotional, natural female
+    "af_nicole",   # Calm, deadpan, relatable female
+    "af_sarah",    # Clear, conversational female
 ]
 
-# Emotion-driven vocal delivery settings (rate, pitch, volume)
+# Kokoro pacing multiplier per emotion
+EMOTION_SPEED = {
+    "angry":     1.13,
+    "annoyed":   1.07,
+    "shocked":   1.15,
+    "hurt":      0.92,
+    "nervous":   1.11,
+    "smug":      1.01,
+    "confident": 1.03,
+    "deadpan":   0.98,
+    "neutral":   1.03,
+}
+
+# Fallback Edge-TTS prosody if Kokoro ever hits an error
 EMOTION_PROSODY = {
-    "angry":     {"rate": "+16%", "pitch": "+5Hz",  "volume": "+15%"},
-    "annoyed":   {"rate": "+12%", "pitch": "+2Hz",  "volume": "+5%"},
-    "shocked":   {"rate": "+18%", "pitch": "+9Hz",  "volume": "+12%"},
+    "angry":     {"rate": "+15%", "pitch": "+4Hz",  "volume": "+12%"},
+    "annoyed":   {"rate": "+11%", "pitch": "+2Hz",  "volume": "+5%"},
+    "shocked":   {"rate": "+17%", "pitch": "+8Hz",  "volume": "+10%"},
     "hurt":      {"rate": "-4%",  "pitch": "-3Hz",  "volume": "-8%"},
-    "nervous":   {"rate": "+15%", "pitch": "+4Hz",  "volume": "-5%"},
+    "nervous":   {"rate": "+14%", "pitch": "+4Hz",  "volume": "-5%"},
     "smug":      {"rate": "+6%",  "pitch": "+2Hz",  "volume": "+4%"},
     "confident": {"rate": "+8%",  "pitch": "-1Hz",  "volume": "+8%"},
     "deadpan":   {"rate": "+4%",  "pitch": "-2Hz",  "volume": "+0%"},
@@ -110,6 +126,7 @@ WALL_THEMES = [
 ]
 
 _WHISPER_MODEL = None
+_KOKORO_PIPELINE = None
 
 
 def get_whisper_model():
@@ -117,6 +134,13 @@ def get_whisper_model():
     if _WHISPER_MODEL is None:
         _WHISPER_MODEL = WhisperModel("base.en", device="cpu", compute_type="int8")
     return _WHISPER_MODEL
+
+
+def get_kokoro_pipeline():
+    global _KOKORO_PIPELINE
+    if _KOKORO_PIPELINE is None:
+        _KOKORO_PIPELINE = KPipeline(lang_code="a")
+    return _KOKORO_PIPELINE
 
 
 def load_used_topics():
@@ -143,6 +167,12 @@ def load_series_state():
             with open(SERIES_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if data.get("active"):
+                    # Auto-migrate any legacy Edge-TTS voice IDs to Kokoro voice IDs
+                    vp = data.get("voice_pair", [])
+                    if vp and not (vp[0].startswith("am_") or vp[0].startswith("af_")):
+                        data["voice_pair"] = _pick_gendered_voices(
+                            data.get("gen_a", "M"), data.get("gen_b", "F")
+                        )
                     return data
         except Exception:
             pass
@@ -318,7 +348,7 @@ def generate_skit_episode():
     EMOTIONAL & HUMAN CONNECTION RULES:
     1. {part_instruction}
     2. Write like real humans talking—raw, relatable feelings (feeling taken for granted, standing up for yourself, relationship honesty, quiet self-respect) mixed with sharp humor.
-    3. Avoid robotic corporate jargon. Use natural contractions ("I'm", "you've", "honestly", "look").
+    3. Avoid robotic corporate jargon. Use natural contractions ("I'm", "you've", "honestly", "look") and natural punctuation (commas, ellipses "...", dashes) so the voice actor delivers it with real rhythm.
     4. Write 8 to 10 alternating dialogue turns between Speaker A and Speaker B (12 to 24 words per turn).
     5. Create a clear emotional arc across the 8-10 lines (e.g., smug -> hurt -> shocked -> confident mic-drop).
     6. Assign each turn the exact emotion from:
@@ -386,15 +416,36 @@ async def _try_edge_tts(text, voice, emotion, audio_path):
 
 def generate_line_audio(text, voice, emotion, audio_path):
     clean_text = re.sub(r"[^\w\s.,!?'-]", "", text).strip() or "Wait a second."
-    for attempt in range(3):
+    speed = EMOTION_SPEED.get(emotion, 1.03)
+
+    # Primary: Kokoro-82M human-acting neural voice
+    try:
+        pipeline = get_kokoro_pipeline()
+        chunks = []
+        for _, _, audio_chunk in pipeline(clean_text, voice=voice, speed=speed):
+            chunks.append(audio_chunk)
+        if chunks:
+            full_audio = np.concatenate(chunks)
+            wav_path = audio_path.replace(".mp3", ".wav")
+            sf.write(wav_path, full_audio, 24000)
+            os.system(f'ffmpeg -y -loglevel error -i "{wav_path}" "{audio_path}"')
+            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 800:
+                return
+    except Exception as e:
+        print(f"Kokoro TTS error ({voice}), falling back to Edge-TTS: {e}")
+
+    # Secondary: Edge-TTS
+    fallback_voice = "en-US-AndrewNeural" if voice.startswith("am_") else "en-US-AvaNeural"
+    for attempt in range(2):
         try:
-            asyncio.run(_try_edge_tts(clean_text, voice, emotion, audio_path))
+            asyncio.run(_try_edge_tts(clean_text, fallback_voice, emotion, audio_path))
             if os.path.exists(audio_path) and os.path.getsize(audio_path) > 800:
                 return
         except Exception as e:
-            print(f"Edge-TTS attempt {attempt + 1} ({voice}, {emotion}) failed: {e}")
+            print(f"Edge-TTS fallback attempt {attempt + 1} failed: {e}")
             time.sleep(2)
 
+    # Last resort: gTTS
     tts = gTTS(text=clean_text, lang="en", slow=False)
     tts.save(audio_path)
 
@@ -402,7 +453,6 @@ def generate_line_audio(text, voice, emotion, audio_path):
 def create_emotional_bg_music(duration, fps=44100):
     """Synthesizes a warm, emotional lo-fi piano/pad chord progression at gentle background volume."""
     t = np.linspace(0, duration, int(fps * duration), endpoint=False)
-    # Gentle Am - F - C - G emotional chord progression (4s per chord)
     chords = [
         (220.00, 261.63, 329.63),  # Am
         (174.61, 220.00, 261.63),  # F
@@ -423,7 +473,7 @@ def create_emotional_bg_music(duration, fps=44100):
         )
         signal += np.where(mask, pad * env, 0.0)
 
-    mix = 0.032 * signal
+    mix = 0.030 * signal
     stereo = np.column_stack((mix, mix)).astype(np.float32)
     return AudioArrayClip(stereo, fps=fps)
 
@@ -481,7 +531,6 @@ def draw_stickman_character(
     is_speaking=False,
 ):
     stroke = max(6, int(10 * scale))
-    # Dynamic emotional body language: lean in when angry/confident, slump slightly when hurt
     lean_x = 0
     slump_y = 0
     shake_x = 0
@@ -547,7 +596,6 @@ def draw_stickman_character(
             width=stroke,
         )
     elif emotion == "shocked":
-        # Both hands raised near head in disbelief
         draw.line(
             [(shoulder_x, shoulder_y), (shoulder_x - int(75 * scale), shoulder_y - int(15 * scale)), (head_cx - int(95 * scale), head_cy + int(10 * scale))],
             fill="#111111",
@@ -559,7 +607,6 @@ def draw_stickman_character(
             width=stroke,
         )
     elif emotion == "hurt":
-        # Hand placed gently over chest/heart
         draw.line(
             [(shoulder_x, shoulder_y), (shoulder_x + facing * int(45 * scale), shoulder_y + int(55 * scale)), (shoulder_x + facing * int(10 * scale), shoulder_y + int(35 * scale))],
             fill="#111111",
@@ -594,7 +641,6 @@ def draw_stickman_character(
     draw.line([(cx, hip_y), (cx - int(48 * scale), foot_y)], fill="#111111", width=stroke)
     draw.line([(cx, hip_y), (cx + int(48 * scale), foot_y)], fill="#111111", width=stroke)
 
-    # Head circle
     draw.ellipse(
         [head_cx - head_r, head_cy - head_r, head_cx + head_r, head_cy + head_r],
         fill="#FFFFFF",
@@ -608,13 +654,11 @@ def draw_stickman_character(
     eye_y = head_cy - int(14 * scale)
     eye_r = max(5, int(9 * scale))
 
-    # Blush / red cheeks for angry or hurt emotions
     if emotion in ("angry", "hurt"):
         cheek_color = "#FCA5A5" if emotion == "angry" else "#FBCFE8"
         draw.ellipse([left_eye_x - 16, eye_y + 14, left_eye_x + 12, eye_y + 30], fill=cheek_color)
         draw.ellipse([right_eye_x - 12, eye_y + 14, right_eye_x + 16, eye_y + 30], fill=cheek_color)
 
-    # Eyes
     if emotion == "deadpan":
         draw.ellipse([left_eye_x - eye_r, eye_y - eye_r, left_eye_x + eye_r, eye_y + eye_r], fill="#111111")
         draw.ellipse([right_eye_x - eye_r, eye_y - eye_r, right_eye_x + eye_r, eye_y + eye_r], fill="#111111")
@@ -630,7 +674,6 @@ def draw_stickman_character(
     elif emotion == "hurt":
         draw.ellipse([left_eye_x - eye_r, eye_y - eye_r, left_eye_x + eye_r, eye_y + eye_r], fill="#111111")
         draw.ellipse([right_eye_x - eye_r, eye_y - eye_r, right_eye_x + eye_r, eye_y + eye_r], fill="#111111")
-        # White shine + small blue tear drop
         draw.ellipse([left_eye_x - 4, eye_y - 5, left_eye_x + 1, eye_y], fill="#FFFFFF")
         draw.ellipse([right_eye_x - 4, eye_y - 5, right_eye_x + 1, eye_y], fill="#FFFFFF")
         tear_x = right_eye_x + int(10 * scale)
@@ -640,7 +683,6 @@ def draw_stickman_character(
         draw.ellipse([left_eye_x - eye_r, eye_y - eye_r, left_eye_x + eye_r, eye_y + eye_r], fill="#111111")
         draw.ellipse([right_eye_x - eye_r, eye_y - eye_r, right_eye_x + eye_r, eye_y + eye_r], fill="#111111")
 
-    # Expressive Eyebrows
     brow_w = int(23 * scale)
     brow_y = eye_y - int(22 * scale)
     brow_thick = max(4, int(6 * scale))
@@ -648,7 +690,6 @@ def draw_stickman_character(
         draw.line([(left_eye_x - brow_w, brow_y - 8), (left_eye_x + brow_w, brow_y + 10)], fill="#111111", width=brow_thick)
         draw.line([(right_eye_x - brow_w, brow_y + 10), (right_eye_x + brow_w, brow_y - 8)], fill="#111111", width=brow_thick)
     elif emotion == "hurt":
-        # Sad slanted inner-up eyebrows
         draw.line([(left_eye_x - brow_w, brow_y + 8), (left_eye_x + brow_w, brow_y - 8)], fill="#111111", width=brow_thick)
         draw.line([(right_eye_x - brow_w, brow_y - 8), (right_eye_x + brow_w, brow_y + 8)], fill="#111111", width=brow_thick)
     elif emotion in ("shocked", "nervous"):
@@ -658,7 +699,6 @@ def draw_stickman_character(
         draw.line([(left_eye_x - brow_w, brow_y), (left_eye_x + brow_w, brow_y)], fill="#111111", width=brow_thick)
         draw.line([(right_eye_x - brow_w, brow_y), (right_eye_x + brow_w, brow_y)], fill="#111111", width=brow_thick)
 
-    # Comic anger vein or nervous sweat drop on forehead
     if emotion == "angry":
         vx = head_cx - facing * int(42 * scale)
         vy = head_cy - int(45 * scale)
@@ -672,7 +712,6 @@ def draw_stickman_character(
         draw.polygon([(sx, sy - 14), (sx - 8, sy + 6), (sx + 8, sy + 6)], fill="#38BDF8")
         draw.ellipse([sx - 8, sy, sx + 8, sy + 14], fill="#38BDF8")
 
-    # Mouth (lip-sync + emotional expression)
     mouth_cx = head_cx + eye_shift
     mouth_cy = head_cy + int(34 * scale)
     if mouth_open > 0.15:
@@ -837,7 +876,6 @@ def render_stickman_scene_frame(
 
 
 def _reaction_emotion_for_listener(speaker_emotion):
-    """Makes the listening character react emotionally instead of freezing blankly."""
     reactions = {
         "angry": "shocked",
         "smug": "annoyed",
@@ -856,7 +894,7 @@ def build_stickman_video(ep, output_path="stickman_pov.mp4"):
     for idx, turn in enumerate(dialogue):
         speaker = turn.get("speaker", "A").upper()
         emotion = turn.get("emotion", "neutral").lower()
-        if emotion not in EMOTION_PROSODY:
+        if emotion not in EMOTION_SPEED:
             emotion = "neutral"
         listener_emo = _reaction_emotion_for_listener(emotion)
         text = turn.get("text", "").strip()
