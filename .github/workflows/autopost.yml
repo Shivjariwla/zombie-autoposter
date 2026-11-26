@@ -1,32 +1,47 @@
-name: Daily Zombie POV Autoposter
+name: Daily Stickman POV Autoposter
 
 on:
   schedule:
-    - cron: '0 4,14,19,23 * * *'
+    # Runs 2x daily at 12:17 PM EST (17:17 UTC) and 7:17 PM EST (00:17 UTC)
+    - cron: '17 0,17 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: daily-stickman-pov-autoposter
+  cancel-in-progress: false
 
 jobs:
   generate-and-post:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick
-      - run: pip install google-genai edge-tts gTTS requests cloudinary moviepy
-      - env:
+
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
+
+      - run: pip install -U google-genai edge-tts gTTS requests cloudinary moviepy pillow numpy
+
+      - name: Generate and post Stickman POV
+        env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
           BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: python main.py
-      - name: Save Part 1 / Part 2 state
+
+      - name: Save used topics history
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add story_state.json
-          git diff --staged --quiet || (git commit -m "Update story state" && git push)
+          git add used_topics.json || true
+          git commit -m "Update used stickman topics" || exit 0
+          git pull --rebase origin main || true
+          git push
