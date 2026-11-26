@@ -25,7 +25,7 @@ jobs:
 
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
 
-      - run: pip install -U google-genai edge-tts gTTS requests cloudinary moviepy pillow numpy
+      - run: pip install -U google-genai edge-tts gTTS requests cloudinary moviepy pillow numpy faster-whisper
 
       - name: Generate and post Stickman POV
         env:
@@ -36,12 +36,12 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: python main.py
 
-      - name: Save used topics history
+      - name: Save multi-part series & topic history
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add used_topics.json || true
-          git commit -m "Update used stickman topics" || exit 0
+          git add used_topics.json series_state.json || true
+          git commit -m "Update stickman series state and topic history" || exit 0
           git pull --rebase origin main || true
           git push
