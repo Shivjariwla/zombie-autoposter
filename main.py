@@ -14,7 +14,7 @@ import cloudinary
 import cloudinary.uploader
 from PIL import Image, ImageDraw, ImageFont
 from faster_whisper import WhisperModel
-from kokoro import KPipeline
+from kokoro_onnx import Kokoro
 from google import genai
 from moviepy import (
     ImageClip,
@@ -32,7 +32,7 @@ SERIES_FILE = "series_state.json"
 
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
-# Natural human-acting Kokoro-82M voice IDs (warm, conversational, non-robotic)
+# Natural human-acting Kokoro-ONNX voice IDs (warm, conversational, non-robotic)
 MALE_VOICES = [
     "am_michael",  # Warm, natural American male
     "am_puck",     # Expressive, witty, energetic male
@@ -139,7 +139,7 @@ def get_whisper_model():
 def get_kokoro_pipeline():
     global _KOKORO_PIPELINE
     if _KOKORO_PIPELINE is None:
-        _KOKORO_PIPELINE = KPipeline(lang_code="a")
+        _KOKORO_PIPELINE = Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin")
     return _KOKORO_PIPELINE
 
 
@@ -167,7 +167,6 @@ def load_series_state():
             with open(SERIES_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if data.get("active"):
-                    # Auto-migrate any legacy Edge-TTS voice IDs to Kokoro voice IDs
                     vp = data.get("voice_pair", [])
                     if vp and not (vp[0].startswith("am_") or vp[0].startswith("af_")):
                         data["voice_pair"] = _pick_gendered_voices(
@@ -418,21 +417,17 @@ def generate_line_audio(text, voice, emotion, audio_path):
     clean_text = re.sub(r"[^\w\s.,!?'-]", "", text).strip() or "Wait a second."
     speed = EMOTION_SPEED.get(emotion, 1.03)
 
-    # Primary: Kokoro-82M human-acting neural voice
+    # Primary: Fast Kokoro-ONNX human-acting voice
     try:
-        pipeline = get_kokoro_pipeline()
-        chunks = []
-        for _, _, audio_chunk in pipeline(clean_text, voice=voice, speed=speed):
-            chunks.append(audio_chunk)
-        if chunks:
-            full_audio = np.concatenate(chunks)
-            wav_path = audio_path.replace(".mp3", ".wav")
-            sf.write(wav_path, full_audio, 24000)
-            os.system(f'ffmpeg -y -loglevel error -i "{wav_path}" "{audio_path}"')
-            if os.path.exists(audio_path) and os.path.getsize(audio_path) > 800:
-                return
+        kokoro = get_kokoro_pipeline()
+        samples, sample_rate = kokoro.create(clean_text, voice=voice, speed=speed, lang="en-us")
+        wav_path = audio_path.replace(".mp3", ".wav")
+        sf.write(wav_path, samples, sample_rate)
+        os.system(f'ffmpeg -y -loglevel error -i "{wav_path}" "{audio_path}"')
+        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 800:
+            return
     except Exception as e:
-        print(f"Kokoro TTS error ({voice}), falling back to Edge-TTS: {e}")
+        print(f"Kokoro-ONNX error ({voice}), falling back to Edge-TTS: {e}")
 
     # Secondary: Edge-TTS
     fallback_voice = "en-US-AndrewNeural" if voice.startswith("am_") else "en-US-AvaNeural"
